@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from json.encoder import py_encode_basestring
 import gym
 import gym.spaces
 import numpy as np
@@ -291,6 +292,9 @@ class Engine(gym.Env, gym.utils.EzPickle):
         'frameskip_binom_p': 1.0,  # Probability of trial return (controls distribution)
 
         '_seed': None,  # Random state seed (avoid name conflict with self.seed)
+
+        # navigation task observation resolution
+        'resolution': 64,
     }
 
     def __init__(self, config={}):
@@ -315,6 +319,9 @@ class Engine(gym.Env, gym.utils.EzPickle):
 
         self.seed(self._seed)
         self.done = True
+        self.navigation = False  # solve this problem as a nvigation task
+        if "mass" in config['robot_base']:
+            self.navigation = True
 
     def parse(self, config):
         ''' Parse a config dict - see self.DEFAULT for description '''
@@ -887,8 +894,11 @@ class Engine(gym.Env, gym.utils.EzPickle):
         # Reset stateful parts of the environment
         self.first_reset = False  # Built our first world successfully
 
-        # Return an observation
-        return self.obs()
+        if self.navigation:
+            return self.navigation_obs()
+        else:
+            # Return an observation
+            return self.obs()
 
     def dist_goal(self):
         ''' Return the distance from the robot to the goal XY position '''
@@ -1122,7 +1132,81 @@ class Engine(gym.Env, gym.utils.EzPickle):
         assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
         return obs
 
+    def navigation_obs(self):
+        num_layers = 0
+        layer_id = {}
+        pos_info = {}
+        agent_com = self.world.robot_com()
+        layer_id['robot'] = num_layers
+        pos_info['robot'] = agent_com
+        num_layers += 1
+        goal_pos = self.goal_pos
+        layer_id['goal'] = num_layers
+        pos_info['goal'] = goal_pos
+        num_layers += 1
+        if self.task == 'push':
+            box_pos = self.box_pos
+            layer_id['box'] = num_layers
+            pos_info['box'] = box_pos
+            num_layers += 1
+        if self.observe_walls:
+            layer_id['walls'] = num_layers
+            num_layers += 1
+            if self.walls_num:
+                walls_pos = self.walls_pos
+                pos_info['walls'] = walls_pos
+        if self.observe_hazards:
+            layer_id['hazards'] = num_layers
+            num_layers += 1
+            hazards_pos = self.hazards_pos
+            pos_info['hazards'] = hazards_pos
+        if self.observe_vases:
+            layer_id['vases'] = num_layers
+            num_layers += 1
+            vases_pos = self.vases_pos
+            pos_info['vases'] = vases_pos
+        if self.observe_gremlins:
+            layer_id['gremlins'] = num_layers
+            num_layers += 1
+            if self.gremlins_num:
+                gremlins_pos = self.gremlins_obj_pos
+                pos_info['gremlins'] = gremlins_pos
+        if self.observe_pillars:
+            layer_id['pillars'] = num_layers
+            num_layers += 1
+            if self.pillars_num:
+                pillars_pos = self.pillars_pos
+                pos_info['pillars'] = pillars_pos
+        if self.observe_buttons:
+            layer_id['buttons'] = num_layers
+            num_layers += 1
+            if self.buttons_num:
+                # Buttons observation is zero while buttons are resetting
+                if self.buttons_timer == 0:
+                    buttons_pos = self.buttons_pos
+                    pos_info['buttons'] = buttons_pos
+        image = np.zeros((self.resolution, self.resolution, num_layers))
+        for layer in layer_id.keys():
+            try:
+                pos_info[layer]
+            except KeyError:
+                continue
+            
+            "reshape data"
+            temp = np.array(pos_info[layer])
+            if len(temp.shape) == 1:
+                temp = temp[np.newaxis, :]
+            temp = temp[:,:2]
 
+            temp += 2
+            temp = temp / 4 * self.resolution
+            pixel_index = np.floor(temp).astype(np.int64)
+            pixel_index = np.clip(pixel_index, 0, 63)
+            layer_index = layer_id[layer]
+            image[pixel_index[:,0], pixel_index[:,1], layer_index] = 1
+        image = image.transpose(2,0,1) # channel first
+        
+        return image
     def cost(self):
         ''' Calculate the current costs and return a dict '''
         self.sim.forward()  # Ensure positions and contacts are correct
@@ -1180,7 +1264,6 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 h_dist = self.dist_xy(h_pos)
                 if h_dist <= self.hazards_size:
                     cost['cost_hazards'] += self.hazards_cost * (self.hazards_size - h_dist)
-
         # Sum all costs into single total cost
         cost['cost'] = sum(v for k, v in cost.items() if k.startswith('cost_'))
 
@@ -1301,7 +1384,10 @@ class Engine(gym.Env, gym.utils.EzPickle):
         if self.steps >= self.num_steps:
             self.done = True  # Maximum number of steps in an episode reached
 
-        return self.obs(), reward, self.done, info
+        if self.navigation:
+            return self.navigation_obs(), reward, self.done, info
+        else:
+            return self.obs(), reward, self.done, info
 
     def reward(self):
         ''' Calculate the dense component of reward.  Call exactly once per step '''
