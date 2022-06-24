@@ -31,7 +31,7 @@ if __name__ == "__main__":
         # plt.savefig('temp.jpg')
         # plt.cla()
         # plt.clf()
-        env.render()
+        # env.render()
         if steps >= 1000:
             done = True
     print("done")

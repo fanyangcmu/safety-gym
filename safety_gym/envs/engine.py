@@ -295,6 +295,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
 
         # navigation task observation resolution
         'resolution': 64,
+        'vector_obs': False,
     }
 
     def __init__(self, config={}):
@@ -1185,28 +1186,43 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 if self.buttons_timer == 0:
                     buttons_pos = self.buttons_pos
                     pos_info['buttons'] = buttons_pos
-        image = np.zeros((self.resolution, self.resolution, num_layers))
-        for layer in layer_id.keys():
-            try:
-                pos_info[layer]
-            except KeyError:
-                continue
-            
-            "reshape data"
-            temp = np.array(pos_info[layer])
-            if len(temp.shape) == 1:
-                temp = temp[np.newaxis, :]
-            temp = temp[:,:2]
+        if self.vector_obs:
+            obs = []
+            for layer in layer_id.keys():
+                try:
+                    pos_info[layer]
+                except KeyError:
+                    continue
+                
+                "reshape data"
+                temp = np.array(pos_info[layer])
+                obs.append(temp.reshape(-1))
+            obs = np.concatenate(obs)
 
-            temp += 2
-            temp = temp / 4 * self.resolution
-            pixel_index = np.floor(temp).astype(np.int64)
-            pixel_index = np.clip(pixel_index, 0, 63)
-            layer_index = layer_id[layer]
-            image[pixel_index[:,0], pixel_index[:,1], layer_index] = 1
-        image = image.transpose(2,0,1) # channel first
+        else:
+            image = np.zeros((self.resolution, self.resolution, num_layers))
+            for layer in layer_id.keys():
+                try:
+                    pos_info[layer]
+                except KeyError:
+                    continue
+                
+                "reshape data"
+                temp = np.array(pos_info[layer])
+                if len(temp.shape) == 1:
+                    temp = temp[np.newaxis, :]
+                temp = temp[:,:2]
+
+                temp += 2
+                temp = temp / 4 * self.resolution
+                pixel_index = np.floor(temp).astype(np.int64)
+                pixel_index = np.clip(pixel_index, 0, self.resolution - 1)
+                layer_index = layer_id[layer]
+                image[pixel_index[:,0], pixel_index[:,1], layer_index] = 1
+            image = image.transpose(2,0,1) # channel first
+            obs = image
         
-        return image
+        return obs
     def cost(self):
         ''' Calculate the current costs and return a dict '''
         self.sim.forward()  # Ensure positions and contacts are correct
