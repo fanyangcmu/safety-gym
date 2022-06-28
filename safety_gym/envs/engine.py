@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from json.encoder import py_encode_basestring
+import pdb
 import gym
 import gym.spaces
 import numpy as np
@@ -305,11 +306,15 @@ class Engine(gym.Env, gym.utils.EzPickle):
         # can't find it anywhere else, it's probably set via the config dict
         # and this parse function.
         self.parse(config)
+        self.navigation = False  # solve this problem as a nvigation task
+        if "mass" in config['robot_base']:
+            self.navigation = True
+            self.observe_com = True
+        self.ego_centric = True
         gym.utils.EzPickle.__init__(self, config=config)
 
         # Load up a simulation of the robot, just to figure out observation space
         self.robot = Robot(self.robot_base)
-
         self.action_space = gym.spaces.Box(-1, 1, (self.robot.nu,), dtype=np.float32)
         self.build_observation_space()
         self.build_placements_dict()
@@ -320,9 +325,6 @@ class Engine(gym.Env, gym.utils.EzPickle):
 
         self.seed(self._seed)
         self.done = True
-        self.navigation = False  # solve this problem as a nvigation task
-        if "mass" in config['robot_base']:
-            self.navigation = True
 
     def parse(self, config):
         ''' Parse a config dict - see self.DEFAULT for description '''
@@ -450,31 +452,55 @@ class Engine(gym.Env, gym.utils.EzPickle):
                     obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (4,), dtype=np.float32)
         if self.task == 'push':
             if self.observe_box_comp:
-                obs_space_dict['box_compass'] = gym.spaces.Box(-1.0, 1.0, (self.compass_shape,), dtype=np.float32)
+                obs_space_dict['box_compass'] = gym.spaces.Box(-np.inf, np.inf, (self.compass_shape,), dtype=np.float32)
             if self.observe_box_lidar:
-                obs_space_dict['box_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+                if self.navigation:
+                    obs_space_dict['box_pos'] = gym.spaces.Box(-np.inf, np.inf, (2,), dtype=np.float32)
+                else:
+                    obs_space_dict['box_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.observe_goal_dist:
             obs_space_dict['goal_dist'] = gym.spaces.Box(0.0, 1.0, (1,), dtype=np.float32)
         if self.observe_goal_comp:
             obs_space_dict['goal_compass'] = gym.spaces.Box(-1.0, 1.0, (self.compass_shape,), dtype=np.float32)
         if self.observe_goal_lidar:
-            obs_space_dict['goal_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+            if self.navigation:
+                obs_space_dict['goal_pos'] = gym.spaces.Box(-np.inf, np.inf, (2,), dtype=np.float32)
+            else:
+                obs_space_dict['goal_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.task == 'circle' and self.observe_circle:
             obs_space_dict['circle_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.observe_remaining:
             obs_space_dict['remaining'] = gym.spaces.Box(0.0, 1.0, (1,), dtype=np.float32)
         if self.walls_num and self.observe_walls:
-            obs_space_dict['walls_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+            if self.navigation:
+                obs_space_dict['walls_pos'] = gym.spaces.Box(-np.inf, np.inf, (self.walls_num * 2,), dtype=np.float32)
+            else:
+                obs_space_dict['walls_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.observe_hazards:
-            obs_space_dict['hazards_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+            if self.navigation:
+                obs_space_dict['hazards_pos'] = gym.spaces.Box(-np.inf, np.inf, (self.hazards_num * 2,), dtype=np.float32)
+            else:
+                obs_space_dict['hazards_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.observe_vases:
-            obs_space_dict['vases_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+            if self.navigation:
+                obs_space_dict['vases_pos'] = gym.spaces.Box(-np.inf, np.inf, (self.vases_num * 2,), dtype=np.float32)
+            else:
+                obs_space_dict['vases_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.gremlins_num and self.observe_gremlins:
-            obs_space_dict['gremlins_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+            if self.navigation:
+                obs_space_dict['gremlins_pos'] = gym.spaces.Box(-np.inf, np.inf, (self.gremlins_num * 2,), dtype=np.float32)
+            else:            
+                obs_space_dict['gremlins_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.pillars_num and self.observe_pillars:
-            obs_space_dict['pillars_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+            if self.navigation:
+                obs_space_dict['pillars_pos'] = gym.spaces.Box(-np.inf, np.inf, (self.pillars_num * 2,), dtype=np.float32)
+            else:
+                obs_space_dict['pillars_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.buttons_num and self.observe_buttons:
-            obs_space_dict['buttons_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+            if self.navigation:
+                obs_space_dict['buttons_pos'] = gym.spaces.Box(-np.inf, np.inf, (self.buttons_num * 2,), dtype=np.float32)
+            else:
+                obs_space_dict['buttons_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.observe_qpos:
             obs_space_dict['qpos'] = gym.spaces.Box(-np.inf, np.inf, (self.robot.nq,), dtype=np.float32)
         if self.observe_qvel:
@@ -1134,95 +1160,277 @@ class Engine(gym.Env, gym.utils.EzPickle):
         return obs
 
     def navigation_obs(self):
-        num_layers = 0
-        layer_id = {}
-        pos_info = {}
-        agent_com = self.world.robot_com()
-        layer_id['robot'] = num_layers
-        pos_info['robot'] = agent_com
-        num_layers += 1
-        goal_pos = self.goal_pos
-        layer_id['goal'] = num_layers
-        pos_info['goal'] = goal_pos
-        num_layers += 1
+        ''' Return the observation of our agent '''
+        self.sim.forward()  # Needed to get sensordata correct
+        obs = {}
+
+        if self.observe_goal_dist:
+            obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
+        if self.observe_goal_comp:
+            obs['goal_compass'] = self.obs_compass(self.goal_pos)
+        if self.observe_goal_lidar:
+            # obs['goal_lidar'] = self.obs_lidar([self.goal_pos], GROUP_GOAL)
+            if self.ego_centric:
+                obs['goal_pos'] = self.ego_xy(self.goal_pos[:2])
+            else:
+                obs['goal_pos'] = self.goal_pos[:2]
         if self.task == 'push':
             box_pos = self.box_pos
-            layer_id['box'] = num_layers
-            pos_info['box'] = box_pos
-            num_layers += 1
-        if self.observe_walls:
-            layer_id['walls'] = num_layers
-            num_layers += 1
-            if self.walls_num:
-                walls_pos = self.walls_pos
-                pos_info['walls'] = walls_pos
+            if self.observe_box_comp:
+                obs['box_compass'] = self.obs_compass(box_pos)
+            if self.observe_box_lidar:
+                # obs['box_lidar'] = self.obs_lidar([box_pos], GROUP_BOX)
+                if self.ego_centric:
+                    obs['box_pos'] = self.ego_xy(box_pos[:2])
+                else:
+                    obs['box_pos'] = box_pos[:2]
+        if self.task == 'circle' and self.observe_circle:
+            obs['circle_lidar'] = self.obs_lidar([self.goal_pos], GROUP_CIRCLE)
+        if self.observe_freejoint:
+            joint_id = self.model.joint_name2id('robot')
+            joint_qposadr = self.model.jnt_qposadr[joint_id]
+            assert joint_qposadr == 0  # Needs to be the first entry in qpos
+            obs['freejoint'] = self.data.qpos[:7]
+        if self.observe_com:
+            obs['com'] = self.world.robot_com()
+        if self.observe_sensors:
+            # Sensors which can be read directly, without processing
+            for sensor in self.sensors_obs:  # Explicitly listed sensors
+                obs[sensor] = self.world.get_sensor(sensor)
+            for sensor in self.robot.hinge_vel_names:
+                obs[sensor] = self.world.get_sensor(sensor)
+            for sensor in self.robot.ballangvel_names:
+                obs[sensor] = self.world.get_sensor(sensor)
+            # Process angular position sensors
+            if self.sensors_angle_components:
+                for sensor in self.robot.hinge_pos_names:
+                    theta = float(self.world.get_sensor(sensor))  # Ensure not 1D, 1-element array
+                    obs[sensor] = np.array([np.sin(theta), np.cos(theta)])
+                for sensor in self.robot.ballquat_names:
+                    quat = self.world.get_sensor(sensor)
+                    obs[sensor] = quat2mat(quat)
+            else:  # Otherwise read sensors directly
+                for sensor in self.robot.hinge_pos_names:
+                    obs[sensor] = self.world.get_sensor(sensor)
+                for sensor in self.robot.ballquat_names:
+                    obs[sensor] = self.world.get_sensor(sensor)
+        if self.observe_remaining:
+            obs['remaining'] = np.array([self.steps / self.num_steps])
+            assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(obs['remaining'])
+        if self.walls_num and self.observe_walls:
+            # obs['walls_lidar'] = self.obs_lidar(self.walls_pos, GROUP_WALL)
+            if self.ego_centric:
+                obs['walls_pos'] = np.concateante([self.ego_xy(pos[:2]) for pos in self.walls_pos])
+            else:
+                obs['walls_pos'] = np.concateante([pos[:2] for pos in self.walls_pos])
         if self.observe_hazards:
-            layer_id['hazards'] = num_layers
-            num_layers += 1
-            hazards_pos = self.hazards_pos
-            pos_info['hazards'] = hazards_pos
+            # obs['hazards_lidar'] = self.obs_lidar(self.hazards_pos, GROUP_HAZARD)
+            if self.ego_centric:
+                obs['hazards_pos'] = np.concatenate([self.ego_xy(pos[:2]) for pos in self.hazards_pos])
+            else:
+                obs['hazards_pos'] = np.concatenate([pos[:2] for pos in self.hazards_pos])
         if self.observe_vases:
-            layer_id['vases'] = num_layers
-            num_layers += 1
-            vases_pos = self.vases_pos
-            pos_info['vases'] = vases_pos
-        if self.observe_gremlins:
-            layer_id['gremlins'] = num_layers
-            num_layers += 1
-            if self.gremlins_num:
-                gremlins_pos = self.gremlins_obj_pos
-                pos_info['gremlins'] = gremlins_pos
-        if self.observe_pillars:
-            layer_id['pillars'] = num_layers
-            num_layers += 1
-            if self.pillars_num:
-                pillars_pos = self.pillars_pos
-                pos_info['pillars'] = pillars_pos
-        if self.observe_buttons:
-            layer_id['buttons'] = num_layers
-            num_layers += 1
-            if self.buttons_num:
-                # Buttons observation is zero while buttons are resetting
-                if self.buttons_timer == 0:
-                    buttons_pos = self.buttons_pos
-                    pos_info['buttons'] = buttons_pos
-        if self.vector_obs:
-            obs = []
-            for layer in layer_id.keys():
-                try:
-                    pos_info[layer]
-                except KeyError:
-                    continue
-                
-                "reshape data"
-                temp = np.array(pos_info[layer])
-                obs.append(temp.reshape(-1))
-            obs = np.concatenate(obs)
-
-        else:
-            image = np.zeros((self.resolution, self.resolution, num_layers))
-            for layer in layer_id.keys():
-                try:
-                    pos_info[layer]
-                except KeyError:
-                    continue
-                
-                "reshape data"
-                temp = np.array(pos_info[layer])
-                if len(temp.shape) == 1:
-                    temp = temp[np.newaxis, :]
-                temp = temp[:,:2]
-
-                temp += 2
-                temp = temp / 4 * self.resolution
-                pixel_index = np.floor(temp).astype(np.int64)
-                pixel_index = np.clip(pixel_index, 0, self.resolution - 1)
-                layer_index = layer_id[layer]
-                image[pixel_index[:,0], pixel_index[:,1], layer_index] = 1
-            image = image.transpose(2,0,1) # channel first
-            obs = image
-        
+            # obs['vases_lidar'] = self.obs_lidar(self.vases_pos, GROUP_VASE)
+            if self.ego_centric:
+                # obs['vases_pos'] = np.concatenate(self.ego_xy(self.vases_pos))
+                obs['vases_pos'] = np.concatenate([self.ego_xy(pos[:2]) for pos in self.vases_pos])
+            else:
+                obs['vases_pos'] = np.concatenate([pos[:2] for pos in self.vases_pos])
+        if self.gremlins_num and self.observe_gremlins:
+            # obs['gremlins_lidar'] = self.obs_lidar(self.gremlins_obj_pos, GROUP_GREMLIN)
+            if self.ego_centric:
+                obs['gremlins_pos'] = np.concatenate([self.ego_xy(pos[:2]) for pos in self.gremlins_obj_pos])
+            else:
+                obs['gremlins_pos'] = np.concatenate([pos[:2] for pos in self.gremlins_obj_pos])
+        if self.pillars_num and self.observe_pillars:
+            # obs['pillars_lidar'] = self.obs_lidar(self.pillars_pos, GROUP_PILLAR)
+            if self.ego_centric:
+                obs['pillars_pos'] = np.concatenate([self.ego_xy(pos[:2]) for pos in self.pillars_pos])
+            else:
+                obs['pillars_pos'] = np.concatenate([pos[:2] for pos in self.pillars_pos])
+        if self.buttons_num and self.observe_buttons:
+            # Buttons observation is zero while buttons are resetting
+            if self.buttons_timer == 0:
+                if self.ego_centric:
+                    obs['buttons_pos'] = np.concatenate([self.ego_xy(pos[:2]) for pos in self.buttons_pos])
+                else:
+                    obs['buttons_pos'] = np.concatenate([pos[:2] for pos in self.buttons_pos])
+                # obs['buttons_lidar'] = self.obs_lidar(self.buttons_pos, GROUP_BUTTON)
+            else:
+                # obs['buttons_lidar'] = np.zeros(self.lidar_num_bins)
+                obs['buttons_pos'] = np.zeros(self.buttons_num * 2)
+        if self.observe_qpos:
+            obs['qpos'] = self.data.qpos.copy()
+        if self.observe_qvel:
+            obs['qvel'] = self.data.qvel.copy()
+        if self.observe_ctrl:
+            obs['ctrl'] = self.data.ctrl.copy()
+        if self.observe_vision:
+            obs['vision'] = self.obs_vision()
+        if self.observation_flatten:
+            flat_obs = np.zeros(self.obs_flat_size)
+            offset = 0
+            for k in sorted(self.obs_space_dict.keys()):
+                k_size = np.prod(obs[k].shape)
+                flat_obs[offset:offset + k_size] = obs[k].flat
+                offset += k_size
+            obs = flat_obs
+        assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
         return obs
+
+    # def navigation_obs(self):
+    #     # goal_only = True
+    #     # if goal_only:
+    #     #     self.observe_hazards = False
+    #     #     self.observe_vases = False
+    #     self.sim.forward()  # Needed to get sensordata correct
+    #     pos_names = []
+    #     pos_info = {}
+    #     agent_com = self.world.robot_com()
+    #     pos_info['robot'] = agent_com
+    #     pos_names.append('robot')
+    #     goal_pos = self.goal_pos
+    #     pos_info['goal'] = goal_pos
+    #     pos_names.append('goal')
+    #     if self.task == 'push':
+    #         box_pos = self.box_pos
+    #         pos_names.append('box')
+    #         pos_info['box'] = box_pos
+    #     if self.observe_walls:
+    #         pos_names.append('walls')
+    #         if self.walls_num:
+    #             walls_pos = self.walls_pos
+    #             pos_info['walls'] = walls_pos
+    #     if self.observe_hazards:
+    #         pos_names.append('hazards')
+    #         hazards_pos = self.hazards_pos
+    #         pos_info['hazards'] = hazards_pos
+    #     if self.observe_vases:
+    #         pos_names.append('vases')
+    #         vases_pos = self.vases_pos
+    #         pos_info['vases'] = vases_pos
+    #     if self.observe_gremlins:
+    #         pos_names.append('gremlins')
+    #         if self.gremlins_num:
+    #             gremlins_pos = self.gremlins_obj_pos
+    #             pos_info['gremlins'] = gremlins_pos
+    #     if self.observe_pillars:
+    #         pos_names.append('pillars')
+    #         if self.pillars_num:
+    #             pillars_pos = self.pillars_pos
+    #             pos_info['pillars'] = pillars_pos
+    #     if self.observe_buttons:
+    #         pos_names.append('buttons')
+    #         if self.buttons_num:
+    #             # Buttons observation is zero while buttons are resetting
+    #             if self.buttons_timer == 0:
+    #                 buttons_pos = self.buttons_pos
+    #                 pos_info['buttons'] = buttons_pos
+        
+    #     obs = {}
+    #     if self.observe_goal_dist:
+    #         obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
+    #     if self.observe_goal_comp:
+    #         obs['goal_compass'] = self.obs_compass(self.goal_pos)
+    #     if self.task == 'push':
+    #         box_pos = self.box_pos
+    #         if self.observe_box_comp:
+    #             obs['box_compass'] = self.obs_compass(box_pos)
+    #     if self.observe_freejoint:
+    #         joint_id = self.model.joint_name2id('robot')
+    #         joint_qposadr = self.model.jnt_qposadr[joint_id]
+    #         assert joint_qposadr == 0  # Needs to be the first entry in qpos
+    #         obs['freejoint'] = self.data.qpos[:7]
+    #     if self.observe_com:
+    #         obs['com'] = self.world.robot_com()
+    #     if self.observe_sensors:
+    #         # Sensors which can be read directly, without processing
+    #         for sensor in self.sensors_obs:  # Explicitly listed sensors
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         for sensor in self.robot.hinge_vel_names:
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         for sensor in self.robot.ballangvel_names:
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         # Process angular position sensors
+    #         if self.sensors_angle_components:
+    #             for sensor in self.robot.hinge_pos_names:
+    #                 theta = float(self.world.get_sensor(sensor))  # Ensure not 1D, 1-element array
+    #                 obs[sensor] = np.array([np.sin(theta), np.cos(theta)])
+    #             for sensor in self.robot.ballquat_names:
+    #                 quat = self.world.get_sensor(sensor)
+    #                 obs[sensor] = quat2mat(quat)
+    #         else:  # Otherwise read sensors directly
+    #             for sensor in self.robot.hinge_pos_names:
+    #                 obs[sensor] = self.world.get_sensor(sensor)
+    #             for sensor in self.robot.ballquat_names:
+    #                 obs[sensor] = self.world.get_sensor(sensor)
+    #     if self.observe_remaining:
+    #         obs['remaining'] = np.array([self.steps / self.num_steps])
+    #         assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(obs['remaining'])
+    #     if self.observe_qpos:
+    #         obs['qpos'] = self.data.qpos.copy()
+    #     if self.observe_qvel:
+    #         obs['qvel'] = self.data.qvel.copy()
+    #     if self.observe_ctrl:
+    #         obs['ctrl'] = self.data.ctrl.copy()
+    #     if self.observe_vision:
+    #         obs['vision'] = self.obs_vision()
+
+    #     if self.vector_obs:
+    #         for pos_name in pos_names:
+    #             try:
+    #                 pos_info[pos_name]
+    #             except KeyError:
+    #                 obs[pos_name] = np.zeros(3)
+    #                 import pdb
+    #                 pdb.set_trace()
+                
+    #             "reshape data"
+    #             # temp = np.array(pos_info[layer])
+    #             # obs.append(temp.reshape(-1))
+    #             if self.ego_centric:
+    #                 if isinstance(pos_info[pos_name], list):
+    #                     for i in range(len(pos_info[pos_name])):
+    #                         pos_info[pos_name][i][:2] -= self.world.robot_com()[:2]
+    #                 else:
+    #                     pos_info[pos_name][:2] -= self.world.robot_com()[:2]
+    #             obs[pos_name] = pos_info[pos_name]
+
+    #         #goal only
+    #         # new_obs = {}
+    #         # new_obs['goal'] = obs['goal']
+    #         # obs = new_obs
+    #         # obs = np.concatenate(obs)
+    #         if self.observation_flatten:
+    #             flat_obs = []
+    #             for k in sorted(obs.keys()):
+    #                 if isinstance(obs[k], list):
+    #                     obs[k] = np.concatenate(obs[k])
+    #                 flat_obs.append(obs[k])
+    #             obs = np.concatenate(flat_obs)
+
+    #     else:
+    #         image = np.zeros((self.resolution, self.resolution, len(pos_names)))
+    #         for i, pos_name in enumerate(pos_names):
+    #             try:
+    #                 pos_info[pos_name]
+    #             except KeyError:
+    #                 continue
+                
+    #             "reshape data"
+    #             temp = np.array(pos_info[pos_name])
+    #             if len(temp.shape) == 1:
+    #                 temp = temp[np.newaxis, :]
+    #             temp = temp[:,:2]
+
+    #             temp += 2
+    #             temp = temp / 4 * self.resolution
+    #             pixel_index = np.floor(temp).astype(np.int64)
+    #             pixel_index = np.clip(pixel_index, 0, self.resolution - 1)
+    #             image[pixel_index[:,0], pixel_index[:,1], i] = 1
+    #         image = image.transpose(2,0,1) # channel first
+    #         obs = image
+    #     return obs
     def cost(self):
         ''' Calculate the current costs and return a dict '''
         self.sim.forward()  # Ensure positions and contacts are correct
