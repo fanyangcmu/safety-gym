@@ -36,8 +36,8 @@
     <actuator>
         <motor gear="0.3 0 0 0 0 0" site="robot" name="x"/>
         <velocity gear="0.3" jointinparent="z" name="z"/>
+
         <!-- <velocity jointinparent="x" ctrllimited="true"/>
         <velocity jointinparent="y" ctrllimited="true"/> -->
-
     </actuator>
 </mujoco>
