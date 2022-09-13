@@ -1252,7 +1252,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
             output.append(obj_pose[key].reshape(-1))                
         output = np.concatenate(output)
         return output
-    def get_gnn_agent_obs(self):
+    def get_gnn_agent_obs(self, node_type_flag=False):
         obj_pose = self.get_obj_pose()
         node_type_dict = {'robot_pos': 0, 'goal_pos': 1, 'hazards_pos': 2, 'pillars_pos': 3, 'box_pos': 4}
         pose_output = []
@@ -1271,8 +1271,12 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 else:
                     data = obj_pose[key]
                 assert len(data.shape) == 2
-                pose_output.append(data)
                 node_type_index = node_type_dict[key]
+                if node_type_flag: 
+                    node_type_one_hot = np.zeros(5)
+                    node_type_one_hot[node_type_index] = 1
+                    data = np.concatenate((data, np.tile(node_type_one_hot, (data.shape[0],1))), axis=1)
+                pose_output.append(data)
                 node_type_list.append(np.ones(data.shape[0]) * node_type_index)
             else:
                 state_output.append(obj_pose[key].reshape(-1))                
