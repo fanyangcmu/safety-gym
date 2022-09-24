@@ -180,6 +180,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
         'goal_size': 0.3,  # Radius of the goal area (if using task 'goal')
 
         # Box parameters (only used if task == 'push')
+        'object_type': 'box',
         'box_placements': None,  # Box placements list (defaults to full extents)
         'box_locations': [],  # Fixed locations to override placements
         'box_keepout': 0.2,  # Box keepout radius for placement
@@ -1135,7 +1136,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 flat_obs[offset:offset + k_size] = obs[k].flat
                 offset += k_size
             obs = flat_obs
-        assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
+        # assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
         return obs
 
     def get_obj_pose(self):
@@ -1242,7 +1243,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
         obs['robot_mat'] = self.world.robot_mat()
         return obs
     
-    def get_rl_agent_obs(self, force_apply=False):
+    def get_mlp_agent_obs(self, force_apply=False):
         obj_pose = self.get_obj_pose()
         output = []
         for key in obj_pose.keys():
