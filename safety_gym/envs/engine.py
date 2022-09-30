@@ -12,6 +12,7 @@ import mujoco_py
 from mujoco_py import MjViewer, MujocoException, const, MjRenderContextOffscreen
 
 from safety_gym.envs.world import World, Robot
+from scipy.spatial.transform import Rotation
 
 import sys
 
@@ -178,6 +179,8 @@ class Engine(gym.Env, gym.utils.EzPickle):
         'goal_locations': [],  # Fixed locations to override placements
         'goal_keepout': 0.4,  # Keepout radius when placing goals
         'goal_size': 0.3,  # Radius of the goal area (if using task 'goal')
+        'near_goal': False, 
+        'goal_range': 0.3,
 
         # Box parameters (only used if task == 'push')
         'object_type': 'box',
@@ -831,6 +834,11 @@ class Engine(gym.Env, gym.utils.EzPickle):
     def sample_goal_position(self):
         ''' Sample a new goal position and return True, else False if sample rejected '''
         placements, keepout = self.placements['goal']
+        robot_pos = self.layout['robot']
+        if self.near_goal:
+            placements = [(robot_pos[0] - self.goal_range, robot_pos[1]- self.goal_range,\
+                 robot_pos[0] + self.goal_range, robot_pos[1] + self.goal_range)]
+            keepout = self.goal_keepout
         goal_xy = self.draw_placement(placements, keepout)
         for other_name, other_xy in self.layout.items():
             other_keepout = self.placements[other_name][1]
@@ -939,6 +947,13 @@ class Engine(gym.Env, gym.utils.EzPickle):
         assert pos.shape == (2,), f'Bad pos {pos}'
         robot_3vec = self.world.robot_pos()
         robot_mat = self.world.robot_mat()
+
+        # orientation = Rotation.from_matrix(robot_mat)
+        # fixed_frame_euler =  orientation.as_euler('xyz')
+        # fixed_frame_euler[0] = 0
+        # fixed_frame_euler[1] = 0
+        # robot_mat = Rotation.from_euler('xyz', fixed_frame_euler).as_matrix()
+
         pos_3vec = np.concatenate([pos, [0]])  # Add a zero z-coordinate
         world_3vec = pos_3vec - robot_3vec
         return np.matmul(world_3vec, robot_mat)[:2]  # only take XY coordinates
@@ -1138,8 +1153,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
             obs = flat_obs
         # assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
         return obs
-
-    def get_obj_pose(self):
+    def get_global_obs(self):
         ''' Return the observation of our agent '''
         self.sim.forward()  # Needed to get sensordata correct
         obs = {}
@@ -1150,20 +1164,14 @@ class Engine(gym.Env, gym.utils.EzPickle):
             obs['goal_compass'] = self.obs_compass(self.goal_pos)
         if self.observe_goal_lidar:
             # obs['goal_lidar'] = self.obs_lidar([self.goal_pos], GROUP_GOAL)
-            if self.ego_centric:
-                obs['goal_pos'] = self.ego_xy(self.goal_pos[:2])                    
-            else:
-                obs['goal_pos'] = self.goal_pos[:2]
+            obs['goal_pos'] = self.goal_pos[:2]
         if self.task == 'push':
             box_pos = self.box_pos
             if self.observe_box_comp:
                 obs['box_compass'] = self.obs_compass(box_pos)
             if self.observe_box_lidar:
                 # obs['box_lidar'] = self.obs_lidar([box_pos], GROUP_BOX)
-                if self.ego_centric:
-                    obs['box_pos'] = self.ego_xy(box_pos[:2])
-                else:
-                    obs['box_pos'] = box_pos[:2]
+                obs['box_pos'] = box_pos[:2]
         if self.task == 'circle' and self.observe_circle:
             obs['circle_lidar'] = self.obs_lidar([self.goal_pos], GROUP_CIRCLE)
         if self.observe_freejoint:
@@ -1198,37 +1206,19 @@ class Engine(gym.Env, gym.utils.EzPickle):
             obs['remaining'] = np.array([self.steps / self.num_steps])
             assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(obs['remaining'])
         if self.walls_num and self.observe_walls:
-            if self.ego_centric:
-                obs['walls_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.walls_pos])
-            else:
-                obs['walls_pos'] = np.stack([pos[:2] for pos in self.walls_pos])
+            obs['walls_pos'] = np.stack([pos[:2] for pos in self.walls_pos])
         if self.observe_hazards:
-            if self.ego_centric:
-                obs['hazards_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.hazards_pos])
-            else:
-                obs['hazards_pos'] = np.stack([pos[:2] for pos in self.hazards_pos])
+            obs['hazards_pos'] = np.stack([pos[:2] for pos in self.hazards_pos])
         if self.observe_vases:
-            if self.ego_centric:
-                obs['vases_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.vases_pos])
-            else:
-                obs['vases_pos'] = np.stack([pos[:2] for pos in self.vases_pos])
+            obs['vases_pos'] = np.stack([pos[:2] for pos in self.vases_pos])
         if self.gremlins_num and self.observe_gremlins:
-            if self.ego_centric:
-                obs['gremlins_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.gremlins_obj_pos])
-            else:
-                obs['gremlins_pos'] = np.stack([pos[:2] for pos in self.gremlins_obj_pos])
+            obs['gremlins_pos'] = np.stack([pos[:2] for pos in self.gremlins_obj_pos])
         if self.pillars_num and self.observe_pillars:
-            if self.ego_centric:
-                obs['pillars_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.pillars_pos])
-            else:
-                obs['pillars_pos'] = np.stack([pos[:2] for pos in self.pillars_pos])
+            obs['pillars_pos'] = np.stack([pos[:2] for pos in self.pillars_pos])
         if self.buttons_num and self.observe_buttons:
             # Buttons observation is zero while buttons are resetting
             if self.buttons_timer == 0:
-                if self.ego_centric:
-                    obs['buttons_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.buttons_pos])
-                else:
-                    obs['buttons_pos'] = np.stack([pos[:2] for pos in self.buttons_pos])
+                obs['buttons_pos'] = np.stack([pos[:2] for pos in self.buttons_pos])
             else:
                 obs['buttons_pos'] = np.zeros(self.buttons_num * 2)
         if self.observe_qpos:
@@ -1239,9 +1229,197 @@ class Engine(gym.Env, gym.utils.EzPickle):
             obs['ctrl'] = self.data.ctrl.copy()
         if self.observe_vision:
             obs['vision'] = self.obs_vision()
-        obs['robot_pos'] = self.world.robot_pos()
+        obs['robot_global_pos'] = self.world.robot_pos()
         obs['robot_mat'] = self.world.robot_mat()
         return obs
+    def get_ego_centric_obs(self):
+        ''' Return the observation of our agent '''
+        self.sim.forward()  # Needed to get sensordata correct
+        obs = {}
+
+        if self.observe_goal_dist:
+            obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
+        if self.observe_goal_comp:
+            obs['goal_compass'] = self.obs_compass(self.goal_pos)
+        if self.observe_goal_lidar:
+            # obs['goal_lidar'] = self.obs_lidar([self.goal_pos], GROUP_GOAL)
+            obs['goal_pos'] = self.ego_xy(self.goal_pos[:2])                    
+        if self.task == 'push':
+            box_pos = self.box_pos
+            if self.observe_box_comp:
+                obs['box_compass'] = self.obs_compass(box_pos)
+            if self.observe_box_lidar:
+                # obs['box_lidar'] = self.obs_lidar([box_pos], GROUP_BOX)
+                obs['box_pos'] = self.ego_xy(box_pos[:2])
+        if self.task == 'circle' and self.observe_circle:
+            obs['circle_lidar'] = self.obs_lidar([self.goal_pos], GROUP_CIRCLE)
+        if self.observe_freejoint:
+            joint_id = self.model.joint_name2id('robot')
+            joint_qposadr = self.model.jnt_qposadr[joint_id]
+            assert joint_qposadr == 0  # Needs to be the first entry in qpos
+            obs['freejoint'] = self.data.qpos[:7]
+        if self.observe_com:
+            obs['com'] = self.world.robot_com()
+        if self.observe_sensors:
+            # Sensors which can be read directly, without processing
+            for sensor in self.sensors_obs:  # Explicitly listed sensors
+                obs[sensor] = self.world.get_sensor(sensor)
+            for sensor in self.robot.hinge_vel_names:
+                obs[sensor] = self.world.get_sensor(sensor)
+            for sensor in self.robot.ballangvel_names:
+                obs[sensor] = self.world.get_sensor(sensor)
+            # Process angular position sensors
+            if self.sensors_angle_components:
+                for sensor in self.robot.hinge_pos_names:
+                    theta = float(self.world.get_sensor(sensor))  # Ensure not 1D, 1-element array
+                    obs[sensor] = np.array([np.sin(theta), np.cos(theta)])
+                for sensor in self.robot.ballquat_names:
+                    quat = self.world.get_sensor(sensor)
+                    obs[sensor] = quat2mat(quat)
+            else:  # Otherwise read sensors directly
+                for sensor in self.robot.hinge_pos_names:
+                    obs[sensor] = self.world.get_sensor(sensor)
+                for sensor in self.robot.ballquat_names:
+                    obs[sensor] = self.world.get_sensor(sensor)
+        if self.observe_remaining:
+            obs['remaining'] = np.array([self.steps / self.num_steps])
+            assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(obs['remaining'])
+        if self.walls_num and self.observe_walls:
+            obs['walls_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.walls_pos])
+        if self.observe_hazards:
+            obs['hazards_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.hazards_pos])
+        if self.observe_vases:
+            obs['vases_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.vases_pos])
+        if self.gremlins_num and self.observe_gremlins:
+            obs['gremlins_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.gremlins_obj_pos])
+        if self.pillars_num and self.observe_pillars:
+            obs['pillars_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.pillars_pos])
+        if self.buttons_num and self.observe_buttons:
+            # Buttons observation is zero while buttons are resetting
+            if self.buttons_timer == 0:
+                obs['buttons_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.buttons_pos])
+            else:
+                obs['buttons_pos'] = np.zeros(self.buttons_num * 2)
+        if self.observe_qpos:
+            obs['qpos'] = self.data.qpos.copy()
+        if self.observe_qvel:
+            obs['qvel'] = self.data.qvel.copy()
+        if self.observe_ctrl:
+            obs['ctrl'] = self.data.ctrl.copy()
+        if self.observe_vision:
+            obs['vision'] = self.obs_vision()
+        obs['robot_global_pos'] = self.world.robot_pos()
+        obs['robot_mat'] = self.world.robot_mat()
+        return obs
+    
+    def get_obj_pose(self):
+        if self.ego_centric:
+            return self.get_ego_centric_obs()
+        else:
+            return self.get_global_obs()
+    # def get_obj_pose(self):
+    #     ''' Return the observation of our agent '''
+    #     self.sim.forward()  # Needed to get sensordata correct
+    #     obs = {}
+
+    #     if self.observe_goal_dist:
+    #         obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
+    #     if self.observe_goal_comp:
+    #         obs['goal_compass'] = self.obs_compass(self.goal_pos)
+    #     if self.observe_goal_lidar:
+    #         # obs['goal_lidar'] = self.obs_lidar([self.goal_pos], GROUP_GOAL)
+    #         if self.ego_centric:
+    #             obs['goal_pos'] = self.ego_xy(self.goal_pos[:2])                    
+    #         else:
+    #             obs['goal_pos'] = self.goal_pos[:2]
+    #     if self.task == 'push':
+    #         box_pos = self.box_pos
+    #         if self.observe_box_comp:
+    #             obs['box_compass'] = self.obs_compass(box_pos)
+    #         if self.observe_box_lidar:
+    #             # obs['box_lidar'] = self.obs_lidar([box_pos], GROUP_BOX)
+    #             if self.ego_centric:
+    #                 obs['box_pos'] = self.ego_xy(box_pos[:2])
+    #             else:
+    #                 obs['box_pos'] = box_pos[:2]
+    #     if self.task == 'circle' and self.observe_circle:
+    #         obs['circle_lidar'] = self.obs_lidar([self.goal_pos], GROUP_CIRCLE)
+    #     if self.observe_freejoint:
+    #         joint_id = self.model.joint_name2id('robot')
+    #         joint_qposadr = self.model.jnt_qposadr[joint_id]
+    #         assert joint_qposadr == 0  # Needs to be the first entry in qpos
+    #         obs['freejoint'] = self.data.qpos[:7]
+    #     if self.observe_com:
+    #         obs['com'] = self.world.robot_com()
+    #     if self.observe_sensors:
+    #         # Sensors which can be read directly, without processing
+    #         for sensor in self.sensors_obs:  # Explicitly listed sensors
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         for sensor in self.robot.hinge_vel_names:
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         for sensor in self.robot.ballangvel_names:
+    #             obs[sensor] = self.world.get_sensor(sensor)
+    #         # Process angular position sensors
+    #         if self.sensors_angle_components:
+    #             for sensor in self.robot.hinge_pos_names:
+    #                 theta = float(self.world.get_sensor(sensor))  # Ensure not 1D, 1-element array
+    #                 obs[sensor] = np.array([np.sin(theta), np.cos(theta)])
+    #             for sensor in self.robot.ballquat_names:
+    #                 quat = self.world.get_sensor(sensor)
+    #                 obs[sensor] = quat2mat(quat)
+    #         else:  # Otherwise read sensors directly
+    #             for sensor in self.robot.hinge_pos_names:
+    #                 obs[sensor] = self.world.get_sensor(sensor)
+    #             for sensor in self.robot.ballquat_names:
+    #                 obs[sensor] = self.world.get_sensor(sensor)
+    #     if self.observe_remaining:
+    #         obs['remaining'] = np.array([self.steps / self.num_steps])
+    #         assert 0.0 <= obs['remaining'][0] <= 1.0, 'bad remaining {}'.format(obs['remaining'])
+    #     if self.walls_num and self.observe_walls:
+    #         if self.ego_centric:
+    #             obs['walls_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.walls_pos])
+    #         else:
+    #             obs['walls_pos'] = np.stack([pos[:2] for pos in self.walls_pos])
+    #     if self.observe_hazards:
+    #         if self.ego_centric:
+    #             obs['hazards_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.hazards_pos])
+    #         else:
+    #             obs['hazards_pos'] = np.stack([pos[:2] for pos in self.hazards_pos])
+    #     if self.observe_vases:
+    #         if self.ego_centric:
+    #             obs['vases_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.vases_pos])
+    #         else:
+    #             obs['vases_pos'] = np.stack([pos[:2] for pos in self.vases_pos])
+    #     if self.gremlins_num and self.observe_gremlins:
+    #         if self.ego_centric:
+    #             obs['gremlins_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.gremlins_obj_pos])
+    #         else:
+    #             obs['gremlins_pos'] = np.stack([pos[:2] for pos in self.gremlins_obj_pos])
+    #     if self.pillars_num and self.observe_pillars:
+    #         if self.ego_centric:
+    #             obs['pillars_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.pillars_pos])
+    #         else:
+    #             obs['pillars_pos'] = np.stack([pos[:2] for pos in self.pillars_pos])
+    #     if self.buttons_num and self.observe_buttons:
+    #         # Buttons observation is zero while buttons are resetting
+    #         if self.buttons_timer == 0:
+    #             if self.ego_centric:
+    #                 obs['buttons_pos'] = np.stack([self.ego_xy(pos[:2]) for pos in self.buttons_pos])
+    #             else:
+    #                 obs['buttons_pos'] = np.stack([pos[:2] for pos in self.buttons_pos])
+    #         else:
+    #             obs['buttons_pos'] = np.zeros(self.buttons_num * 2)
+    #     if self.observe_qpos:
+    #         obs['qpos'] = self.data.qpos.copy()
+    #     if self.observe_qvel:
+    #         obs['qvel'] = self.data.qvel.copy()
+    #     if self.observe_ctrl:
+    #         obs['ctrl'] = self.data.ctrl.copy()
+    #     if self.observe_vision:
+    #         obs['vision'] = self.obs_vision()
+    #     obs['robot_global_pos'] = self.world.robot_pos()
+    #     obs['robot_mat'] = self.world.robot_mat()
+    #     return obs
     
     def get_mlp_agent_obs(self, force_apply=False):
         obj_pose = self.get_obj_pose()
@@ -1255,14 +1433,14 @@ class Engine(gym.Env, gym.utils.EzPickle):
         return output
     def get_gnn_agent_obs(self, node_type_flag=False):
         obj_pose = self.get_obj_pose()
-        node_type_dict = {'robot_pos': 0, 'goal_pos': 1, 'hazards_pos': 2, 'pillars_pos': 3, 'box_pos': 4}
+        node_type_dict = {'robot_global_pos': 0, 'goal_pos': 1, 'hazards_pos': 2, 'pillars_pos': 3, 'box_pos': 4}
         pose_output = []
         node_type_list = []
         state_output = []
         for key in obj_pose.keys():
             # change all of the pose to two dimensional vector
             if key in node_type_dict.keys():
-                if key == 'robot_pos':
+                if key == 'robot_global_pos':
                     if self.ego_centric:
                         data = np.zeros((1,2))
                     else:
