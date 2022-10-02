@@ -948,11 +948,11 @@ class Engine(gym.Env, gym.utils.EzPickle):
         robot_3vec = self.world.robot_pos()
         robot_mat = self.world.robot_mat()
 
-        # orientation = Rotation.from_matrix(robot_mat)
-        # fixed_frame_euler =  orientation.as_euler('xyz')
-        # fixed_frame_euler[0] = 0
-        # fixed_frame_euler[1] = 0
-        # robot_mat = Rotation.from_euler('xyz', fixed_frame_euler).as_matrix()
+        orientation = Rotation.from_matrix(robot_mat)
+        fixed_frame_euler =  orientation.as_euler('xyz')
+        fixed_frame_euler[0] = 0
+        fixed_frame_euler[1] = 0
+        robot_mat = Rotation.from_euler('xyz', fixed_frame_euler).as_matrix()
 
         pos_3vec = np.concatenate([pos, [0]])  # Add a zero z-coordinate
         world_3vec = pos_3vec - robot_3vec
