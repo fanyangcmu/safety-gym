@@ -417,7 +417,6 @@ class Engine(gym.Env, gym.utils.EzPickle):
     def build_observation_space(self):
         ''' Construct observtion space.  Happens only once at during __init__ '''
         obs_space_dict = OrderedDict()  # See self.obs()
-
         if self.observe_freejoint:
             obs_space_dict['freejoint'] = gym.spaces.Box(-np.inf, np.inf, (7,), dtype=np.float32)
         if self.observe_com:
@@ -707,15 +706,15 @@ class Engine(gym.Env, gym.utils.EzPickle):
                           'rgba': COLOR_GREMLIN}
                 world_config['objects'][name] = object
         if self.task == 'push':
-            object = {'name': 'box',
-                      'type': 'box',
+            object = {'name': self.object_type,
+                      'type': self.object_type,
                       'size': np.ones(3) * self.box_size,
                       'pos': np.r_[self.layout['box'], self.box_size],
                       'rot': self.random_rot(),
                       'density': self.box_density,
                       'group': GROUP_BOX,
                       'rgba': COLOR_BOX}
-            world_config['objects']['box'] = object
+            world_config['objects'][self.object_type] = object
 
         # Extra geoms (immovable objects) to add to the scene
         world_config['geoms'] = {}

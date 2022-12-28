@@ -226,6 +226,22 @@ class World:
                             rgba="{rgba}" group="{group}" pos="-{x} -{y} 0"/>
                     </body>
                 '''.format(**{k: convert(v) for k, v in object.items()}))
+            elif name == "regular_box":
+                body = xmltodict.parse('''
+                    <body name="box" pos="{pos}" quat="{quat}">
+                        <freejoint name="{name}"/>
+                        <geom name="{name}" type="box" size="{size}" density="{density}"
+                            rgba="{rgba}" group="{group}"/>
+                    </body>
+                '''.format(**{k: convert(v) for k, v in object.items()}))
+            elif name == "cylinder":
+                body = xmltodict.parse('''
+                    <body name="box" pos="{pos}" quat="{quat}">
+                        <freejoint name="{name}"/>
+                        <geom name="{name}" type="{type}" size="{size}" density="{density}"
+                            rgba="{rgba}" group="{group}"/>
+                    </body>
+                '''.format(**{k: convert(v) for k, v in object.items()}))
             else:
                 body = xmltodict.parse('''
                     <body name="{name}" pos="{pos}" quat="{quat}">
