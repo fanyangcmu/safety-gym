@@ -304,6 +304,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
         
         #additional parameter for planning safe rl tasks
         'ego_centric': True,
+        'push_w_goal_reward': False, # Define the task as push, but use goal reward. Used to train a goal-reaching policy.
         # 'lidar_distance': False,
     }
 
@@ -1621,18 +1622,18 @@ class Engine(gym.Env, gym.utils.EzPickle):
         ''' Calculate the dense component of reward.  Call exactly once per step '''
         reward = 0.0
         # Distance from robot to goal
-        if self.task in ['goal', 'button']:
+        if (self.task in ['goal', 'button']) or (self.task == 'push' and self.push_w_goal_reward):
             dist_goal = self.dist_goal()
             reward += (self.last_dist_goal - dist_goal) * self.reward_distance
             self.last_dist_goal = dist_goal
         # Distance from robot to box
-        if self.task == 'push':
+        if self.task == 'push' and not self.push_w_goal_reward:
             dist_box = self.dist_box()
             gate_dist_box_reward = (self.last_dist_box > self.box_null_dist * self.box_size)
             reward += (self.last_dist_box - dist_box) * self.reward_box_dist * gate_dist_box_reward
             self.last_dist_box = dist_box
         # Distance from box to goal
-        if self.task == 'push':
+        if self.task == 'push' and not self.push_w_goal_reward:
             dist_box_goal = self.dist_box_goal()
             reward += (self.last_box_goal - dist_box_goal) * self.reward_box_goal
             self.last_box_goal = dist_box_goal
