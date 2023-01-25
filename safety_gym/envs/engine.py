@@ -1512,7 +1512,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
 
     def goal_met(self):
         ''' Return true if the current goal is met this step '''
-        if self.task == 'goal':
+        if self.task == 'goal' or self.push_w_goal_reward:
             return self.dist_goal() <= self.goal_size
         if self.task == 'push':
             return self.dist_box_goal() <= self.goal_size
