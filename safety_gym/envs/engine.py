@@ -1615,7 +1615,9 @@ class Engine(gym.Env, gym.utils.EzPickle):
         self.steps += 1
         if self.steps >= self.num_steps:
             self.done = True  # Maximum number of steps in an episode reached
-
+        if 'ant' in self.robot_base:
+            if self.data.get_body_xpos('robot').copy()[2] < 0.08:
+                self.done = True  # the robot has flipped over
         return self.obs(), reward, self.done, info
 
     def reward(self):
